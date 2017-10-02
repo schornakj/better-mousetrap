@@ -4,9 +4,16 @@ import serial
 import time
 import subprocess
 
+# STATE_WAITING = 0
+# STATE_TRACKING = 1
+#
+# STATE = STATE_WAITING
+#
+# TRACKING_TIME = 0
+
 def main():
     print("Hello")
-    # arduino = serial.Serial('/dev/ttyACM0', 9600, timeout=.5)
+    arduino = serial.Serial('/dev/ttyACM0', 9600, timeout=.5)
     cv2.waitKey(1000)  # give the connection a second to settle
 
     command = 'v4l2-ctl -d /dev/video1 -c focus_auto=0'
@@ -18,7 +25,7 @@ def main():
     command = 'v4l2-ctl -d /dev/video1 -c exposure_auto=1'
     process2 = subprocess.Popen(command.split(), stdout=subprocess.PIPE)
     cv2.waitKey(100)
-    command = 'v4l2-ctl -d /dev/video1 -c exposure_absolute=255'
+    command = 'v4l2-ctl -d /dev/video1 -c exposure_absolute=150'
     process2 = subprocess.Popen(command.split(), stdout=subprocess.PIPE)
     cv2.waitKey(100)
 
@@ -27,6 +34,7 @@ def main():
     cap = cv2.VideoCapture(1)
     cv2.waitKey(1000)
     ret, frame = cap.read()
+    height, width, _ = frame.shape
     while cap.isOpened():
         if cv2.waitKey(10) == ord('q') or frame is None:
             break
@@ -34,7 +42,7 @@ def main():
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-        hsv_range_min = np.array([90, 50, 40])
+        hsv_range_min = np.array([90, 30, 40])
         hsv_range_max = np.array([180, 120, 200])
 
         # mask = cv2.inRange(gray, 0, 75)
@@ -63,14 +71,21 @@ def main():
                 cx = int(M['m10'] / M['m00'])
                 cy = int(M['m01'] / M['m00'])
                 area = cv2.contourArea(contour_largest)
-                frame_annotated = draw_target_marker(frame, (cx, cy))
-                cv2.drawContours(frame_annotated, [contour_largest], 0, (0, 255, 0), 3)
-                if area > 200:
+
+                if area > 5000:
+                    frame_annotated = draw_target_marker(frame, (cx, cy))
+                    cv2.drawContours(frame_annotated, [contour_largest], 0, (0, 255, 0), 3)
                     print("Found a mouselike object with area " + str(area))
+                    if is_near_center(width, height, cx, cy):
+                        print("Mouselike object is within target area")
+                        arduino.write("go")
+                        # time.sleep(1)
+                        # break
+                        # cv2.waitKey(500)
         # cv2.waitKey(100)
         # time.sleep(1/30)
         cv2.imshow('camera', frame_annotated)
-        cv2.imshow('mask', mask_opened)
+        # cv2.imshow('mask', mask_opened)
         # arduino.write("go")
         #
         # data = arduino.readline()
@@ -84,6 +99,14 @@ def draw_target_marker(image, target_coords):
     output = image.copy()
     cv2.circle(output, target_coords, 10, (0, 255, 0))
     return output
+
+def is_near_center(width, height, cx, cy):
+    if abs(width/2 - cx) <= width*0.25 and abs(height/2 - cy) <= height*0.25:
+        return True
+    else:
+        return False
+
+
 
 # def get_dense_flow(image_past, image_current):
 #     flow = cv2.calcOpticalFlowFarneback(cv2.cvtColor(image_past, cv2.COLOR_BGR2GRAY),
